@@ -1,14 +1,15 @@
 
-use std::net::{SocketAddrV4};
+use std::net::SocketAddrV4;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use rosc::{OscPacket, OscMessage, OscType};
 
 use super::errors::*;
-use super::net::{UdpConnection};
+use super::net::UdpConnection;
 use super::osc::OscConnection;
 
+// TODO: split out grid and add tilt & arc support
 #[allow(enum_variant_names)]
 pub enum MonomeAction<'a> {
     LedSet(u8, u8, bool),

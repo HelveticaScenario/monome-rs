@@ -1,7 +1,7 @@
 
 use std::net::SocketAddr;
 
-use super::net::{UdpConnection};
+use super::net::UdpConnection;
 use super::errors::*;
 
 use rosc;
@@ -43,4 +43,3 @@ impl OscConnection {
         }
     }
 }
-

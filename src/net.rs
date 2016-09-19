@@ -6,6 +6,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 
 use super::errors::*;
 
+// TODO: refactor to use tokio/futures, not threading
 pub struct UdpConnection {
     socket: UdpSocket,
     message_receiver: Receiver<Vec<u8>>,
@@ -52,14 +53,16 @@ impl UdpConnection {
                 Ok(socket) => return Ok(socket),
                 Err(err) => {
                     if err.kind() != io::ErrorKind::AddrInUse {
-                        return Err(err).chain_err(|| "unknown error when attempting to bind udp socket");
+                        return Err(err)
+                            .chain_err(|| "unknown error when attempting to bind udp socket");
                     }
                 }
             }
             port += 1;
             counter += 1;
             if counter > 50000 {
-                return Err(io::Error::last_os_error()).chain_err(|| "unable to find free port to bind udp socket to");
+                return Err(io::Error::last_os_error())
+                    .chain_err(|| "unable to find free port to bind udp socket to");
             }
         }
     }
