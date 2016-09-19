@@ -9,6 +9,7 @@ env_logger = "0.3"
 clippy = "*"
 log = "0.3"
 ndarray = "0.6"
+error-chain = "0.5"
 
 [dev-dependencies]
 env_logger = "0.3"

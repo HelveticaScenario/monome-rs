@@ -1,51 +1,16 @@
 
-use std::io;
-use std::net::{SocketAddrV4, AddrParseError};
+use std::net::{SocketAddrV4};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use rosc::{OscPacket, OscMessage, OscType};
 
-use super::net::{UdpConnection, UdpConnectionError};
+use super::errors::*;
+use super::net::{UdpConnection};
 use super::osc::OscConnection;
-
-#[derive(Debug)]
-pub enum MonomeError {
-    Init,
-    IoError(io::Error),
-    OscError(super::osc::OscError),
-    Timeout,
-    UdpConnection(UdpConnectionError),
-    AddrParse(AddrParseError),
-}
-
-impl From<io::Error> for MonomeError {
-    fn from(err: io::Error) -> Self {
-        MonomeError::IoError(err)
-    }
-}
-
-impl From<super::osc::OscError> for MonomeError {
-    fn from(err: super::osc::OscError) -> Self {
-        MonomeError::OscError(err)
-    }
-}
-
-impl From<AddrParseError> for MonomeError {
-    fn from(err: AddrParseError) -> Self {
-        MonomeError::AddrParse(err)
-    }
-}
-
-impl From<UdpConnectionError> for MonomeError {
-    fn from(err: UdpConnectionError) -> Self {
-        MonomeError::UdpConnection(err)
-    }
-}
 
 #[allow(enum_variant_names)]
 pub enum MonomeAction<'a> {
-    // TODO: tighten types
     LedSet(u8, u8, bool),
     LedAll(bool),
     LedIntensity(u8),
@@ -66,11 +31,11 @@ pub struct Monome {
 }
 
 impl Monome {
-    pub fn new() -> Result<Monome, MonomeError> {
+    pub fn new() -> Result<Monome> {
         let device_port = try!(Self::fetch_device_port_from_serialosc()) as u16;
-
-        let conn = try!(UdpConnection::new(SocketAddrV4::new(try!("127.0.0.1".parse()),
-                                                             device_port)));
+        let local_addr = try!("127.0.0.1".parse().chain_err(|| "failed parsing addr"));
+        let socket_addr = SocketAddrV4::new(local_addr, device_port);
+        let conn = try!(UdpConnection::new(socket_addr));
         let osc_conn = OscConnection::new(conn);
 
         let mut monome = Monome { osc_connection: osc_conn };
@@ -78,7 +43,7 @@ impl Monome {
         Ok(monome)
     }
 
-    fn fetch_device_port_from_serialosc() -> Result<i32, MonomeError> {
+    fn fetch_device_port_from_serialosc() -> Result<i32> {
         let conn = try!(UdpConnection::new("127.0.0.1:12002"));
         let mut osc_conn = OscConnection::new(conn);
         let (addr, port) = try!(osc_conn.local_addr());
@@ -94,12 +59,12 @@ impl Monome {
 
         if let OscPacket::Message(msg) = packet {
             if msg.addr != "/serialosc/device" {
-                return Err(MonomeError::Init);
+                return Err("received message with addr other than /serialosc/device".into());
             }
 
             if let Some(args) = msg.args {
                 if args.len() != 3 {
-                    return Err(MonomeError::Init);
+                    return Err("/serialosc/device message has incorrect number of args".into());
                 }
                 if let OscType::Int(device_port) = args[2] {
                     info!("Monome: device port {}", device_port);
@@ -107,23 +72,23 @@ impl Monome {
                 }
             }
         }
-        Err(MonomeError::Init)
+        Err("error initialising Monome".into())
     }
 
-    fn spin_until_read(osc_connection: &mut OscConnection) -> Result<OscPacket, MonomeError> {
+    fn spin_until_read(osc_connection: &mut OscConnection) -> Result<OscPacket> {
         let expiration = Instant::now() + Duration::from_secs(3);
         loop {
             if let Some(packet) = try!(osc_connection.read()) {
                 return Ok(packet);
             }
             if Instant::now() > expiration {
-                return Err(MonomeError::Timeout);
+                return Err("timeout waiting for serialosc response/monome".into());
             }
             thread::sleep(Duration::from_millis(10));
         }
     }
 
-    pub fn poll(&mut self) -> Result<Option<MonomeEvent>, MonomeError> {
+    pub fn poll(&mut self) -> Result<Option<MonomeEvent>> {
         if let Some(packet) = try!(self.osc_connection.read()) {
             Ok(self.parse(packet))
         } else {
@@ -131,7 +96,7 @@ impl Monome {
         }
     }
 
-    pub fn send(&mut self, action: &MonomeAction) -> Result<(), MonomeError> {
+    pub fn send(&mut self, action: &MonomeAction) -> Result<()> {
         let packet = match *action {
             MonomeAction::LedSet(x, y, s) => {
                 Self::message("/grid/led/set",
@@ -214,7 +179,7 @@ impl Monome {
         None
     }
 
-    pub fn info(&mut self) -> Result<(), MonomeError> {
+    pub fn info(&mut self) -> Result<()> {
         let (addr, port) = try!(self.osc_connection.local_addr());
         let packet = OscPacket::Message(OscMessage {
             addr: "/sys/info".into(),
@@ -224,7 +189,7 @@ impl Monome {
         Ok(())
     }
 
-    fn set_host_port(&mut self) -> Result<(), MonomeError> {
+    fn set_host_port(&mut self) -> Result<()> {
         let (addr, port) = try!(self.osc_connection.local_addr());
         let port_packet = OscPacket::Message(OscMessage {
             addr: "/sys/port".into(),

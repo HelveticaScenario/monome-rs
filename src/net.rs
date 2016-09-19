@@ -1,33 +1,10 @@
-use std::net::{AddrParseError, ToSocketAddrs, UdpSocket, SocketAddr, SocketAddrV4};
+use std::net::{ToSocketAddrs, UdpSocket, SocketAddr, SocketAddrV4};
 use std::io;
 use std::thread;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-#[derive(Debug)]
-pub enum UdpConnectionError {
-    Receive(TryRecvError),
-    Io(io::Error),
-    AddrParse(AddrParseError),
-}
-
-impl From<TryRecvError> for UdpConnectionError {
-    fn from(err: TryRecvError) -> Self {
-        UdpConnectionError::Receive(err)
-    }
-}
-
-impl From<io::Error> for UdpConnectionError {
-    fn from(err: io::Error) -> Self {
-        UdpConnectionError::Io(err)
-    }
-}
-
-impl From<AddrParseError> for UdpConnectionError {
-    fn from(err: AddrParseError) -> Self {
-        UdpConnectionError::AddrParse(err)
-    }
-}
+use super::errors::*;
 
 pub struct UdpConnection {
     socket: UdpSocket,
@@ -36,15 +13,15 @@ pub struct UdpConnection {
 }
 
 impl UdpConnection {
-    pub fn new<A: ToSocketAddrs>(addr: A) -> Result<Self, UdpConnectionError> {
+    pub fn new<A: ToSocketAddrs>(addr: A) -> Result<Self> {
         info!("UdpConnection new");
         let socket = try!(Self::try_bind_free());
-        try!(socket.connect(addr));
+        try!(socket.connect(addr).chain_err(|| "unable to connect to udp socket"));
         let thread_builder = thread::Builder::new();
-        let socket_clone = try!(socket.try_clone());
+        let socket_clone = try!(socket.try_clone().chain_err(|| "unable to clone udp socket"));
         let (tx, rx) = channel();
 
-        let handle = try!(thread_builder.name("udp_connection".into()).spawn(move || {
+        let spawn_result = thread_builder.name("udp_connection".into()).spawn(move || {
             // TODO: thread needs a timeout and self-kill sentinel
             info!("UdpConnection thread init");
             let mut recv_buf = [0u8; 64 * 1000];
@@ -54,7 +31,8 @@ impl UdpConnection {
                 debug!("UdpConnection data received: {:?}", vec);
                 tx.send(vec).unwrap();
             }
-        }));
+        });
+        let handle = try!(spawn_result.chain_err(|| "unable to spawn thread"));
 
         Ok(UdpConnection {
             socket: socket,
@@ -63,10 +41,10 @@ impl UdpConnection {
         })
     }
 
-    fn try_bind_free() -> Result<UdpSocket, UdpConnectionError> {
+    fn try_bind_free() -> Result<UdpSocket> {
         let mut port = 10000;
         let mut counter = 0;
-        let local_addr = try!("127.0.0.1".parse());
+        let local_addr = try!("127.0.0.1".parse().chain_err(|| "unable to parse local addr"));
 
         loop {
             let bind_attempt = UdpSocket::bind(SocketAddrV4::new(local_addr, port));
@@ -74,19 +52,19 @@ impl UdpConnection {
                 Ok(socket) => return Ok(socket),
                 Err(err) => {
                     if err.kind() != io::ErrorKind::AddrInUse {
-                        return Err(UdpConnectionError::Io(err));
+                        return Err(err).chain_err(|| "unknown error when attempting to bind udp socket");
                     }
                 }
             }
             port += 1;
             counter += 1;
             if counter > 50000 {
-                return Err(UdpConnectionError::Io(io::Error::last_os_error()));
+                return Err(io::Error::last_os_error()).chain_err(|| "unable to find free port to bind udp socket to");
             }
         }
     }
 
-    pub fn next_message(&mut self) -> Result<Option<Vec<u8>>, UdpConnectionError> {
+    pub fn next_message(&mut self) -> Result<Option<Vec<u8>>> {
         match self.message_receiver.try_recv() {
             Err(TryRecvError::Empty) => Ok(None),
             Err(TryRecvError::Disconnected) => Err(TryRecvError::Disconnected.into()),
@@ -94,15 +72,15 @@ impl UdpConnection {
         }
     }
 
-    pub fn send_message(&mut self, data: &[u8]) -> Result<usize, UdpConnectionError> {
-        self.socket.send(data).map_err(|e| e.into())
+    pub fn send_message(&mut self, data: &[u8]) -> Result<usize> {
+        self.socket.send(data).chain_err(|| "unable to send message to socket")
     }
 
     pub fn join(self) -> io::Result<()> {
         self.thread_handle.join().unwrap()
     }
 
-    pub fn local_addr(&self) -> Result<SocketAddr, UdpConnectionError> {
-        Ok(try!(self.socket.local_addr()))
+    pub fn local_addr(&self) -> Result<SocketAddr> {
+        Ok(try!(self.socket.local_addr().chain_err(|| "unable to fetch local addr from socket")))
     }
 }
