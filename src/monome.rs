@@ -49,10 +49,8 @@ impl Monome {
         let mut osc_conn = OscConnection::new(conn);
         let (addr, port) = try!(osc_conn.local_addr());
 
-        let packet = OscPacket::Message(OscMessage {
-            addr: "/serialosc/list".into(),
-            args: Some(vec![OscType::String(addr), OscType::Int(port)]),
-        });
+        let packet = message_noprefix("/serialosc/list",
+                                      vec![OscType::String(addr), OscType::Int(port)]);
 
         try!(osc_conn.write(&packet));
 
@@ -100,14 +98,14 @@ impl Monome {
     pub fn send(&mut self, action: &MonomeAction) -> Result<()> {
         let packet = match *action {
             MonomeAction::LedSet(x, y, s) => {
-                Self::message("/grid/led/set",
-                              vec![OscType::Int(x as i32),
-                                   OscType::Int(y as i32),
-                                   OscType::Int(s as i32)])
+                message("/grid/led/set",
+                        vec![OscType::Int(x as i32),
+                             OscType::Int(y as i32),
+                             OscType::Int(s as i32)])
             }
-            MonomeAction::LedAll(s) => Self::message("/grid/led/all", vec![OscType::Int(s as i32)]),
+            MonomeAction::LedAll(s) => message("/grid/led/all", vec![OscType::Int(s as i32)]),
             MonomeAction::LedIntensity(i) => {
-                Self::message("/grid/led/intensity", vec![OscType::Int(i as i32)])
+                message("/grid/led/intensity", vec![OscType::Int(i as i32)])
             }
             MonomeAction::LedMap(x_off, y_off, masks) => {
                 let mut args = Vec::with_capacity(10);
@@ -116,34 +114,23 @@ impl Monome {
                 for m in masks.iter().map(|m| OscType::Int(*m as i32)) {
                     args.push(m);
                 }
-                Self::message("/grid/led/map", args)
+                message("/grid/led/map", args)
             }
             MonomeAction::LedCol(x, y_off, mask) => {
-                Self::message("/grid/led/col",
-                              vec![OscType::Int(x as i32),
-                                   OscType::Int(y_off as i32),
-                                   OscType::Int(mask as i32)])
+                message("/grid/led/col",
+                        vec![OscType::Int(x as i32),
+                             OscType::Int(y_off as i32),
+                             OscType::Int(mask as i32)])
             }
             MonomeAction::LedRow(x_off, y, mask) => {
-                Self::message("/grid/led/row",
-                              vec![OscType::Int(x_off as i32),
-                                   OscType::Int(y as i32),
-                                   OscType::Int(mask as i32)])
+                message("/grid/led/row",
+                        vec![OscType::Int(x_off as i32),
+                             OscType::Int(y as i32),
+                             OscType::Int(mask as i32)])
             }
         };
         try!(self.osc_connection.write(&packet));
         Ok(())
-    }
-
-    fn message(addr: &str, args: Vec<OscType>) -> OscPacket {
-        let mut final_addr = String::with_capacity(addr.len() + PREFIX.len());
-        final_addr.push_str(PREFIX);
-        final_addr.push_str(addr);
-        let message = OscMessage {
-            addr: final_addr,
-            args: Some(args),
-        };
-        OscPacket::Message(message)
     }
 
     fn parse(&mut self, packet: OscPacket) -> Option<MonomeEvent> {
@@ -182,32 +169,35 @@ impl Monome {
 
     pub fn info(&mut self) -> Result<()> {
         let (addr, port) = try!(self.osc_connection.local_addr());
-        let packet = OscPacket::Message(OscMessage {
-            addr: "/sys/info".into(),
-            args: Some(vec![OscType::String(addr), OscType::Int(port)]),
-        });
+        let packet = message_noprefix("/sys/info", vec![OscType::String(addr), OscType::Int(port)]);
         try!(self.osc_connection.write(&packet));
         Ok(())
     }
 
     fn set_host_port(&mut self) -> Result<()> {
         let (addr, port) = try!(self.osc_connection.local_addr());
-        let port_packet = OscPacket::Message(OscMessage {
-            addr: "/sys/port".into(),
-            args: Some(vec![OscType::Int(port)]),
-        });
-        let host_packet = OscPacket::Message(OscMessage {
-            addr: "/sys/host".into(),
-            args: Some(vec![OscType::String(addr)]),
-        });
-        let prefix_packet = OscPacket::Message(OscMessage {
-            addr: "/sys/prefix".into(),
-            args: Some(vec![OscType::String(PREFIX.into())]),
-        });
+        let port_packet = message_noprefix("/sys/port", vec![OscType::Int(port)]);
+        let host_packet = message_noprefix("/sys/host", vec![OscType::String(addr)]);
+        let prefix_packet = message_noprefix("/sys/prefix", vec![OscType::String(PREFIX.into())]);
 
         try!(self.osc_connection.write(&port_packet));
         try!(self.osc_connection.write(&host_packet));
         try!(self.osc_connection.write(&prefix_packet));
         Ok(())
     }
+}
+
+fn message(addr: &str, args: Vec<OscType>) -> OscPacket {
+    let mut final_addr = String::with_capacity(addr.len() + PREFIX.len());
+    final_addr.push_str(PREFIX);
+    final_addr.push_str(addr);
+    message_noprefix(&final_addr, args)
+}
+
+fn message_noprefix(addr: &str, args: Vec<OscType>) -> OscPacket {
+    let message = OscMessage {
+        addr: addr.to_owned(),
+        args: Some(args),
+    };
+    OscPacket::Message(message)
 }

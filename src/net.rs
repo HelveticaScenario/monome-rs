@@ -2,9 +2,11 @@ use std::net::{ToSocketAddrs, UdpSocket, SocketAddr, SocketAddrV4};
 use std::io;
 use std::thread;
 use std::sync::mpsc::channel;
-use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 
 use super::errors::*;
+
+const START_BIND_PORT: u16 = 10000;
 
 // TODO: refactor to use tokio/futures, not threading
 pub struct UdpConnection {
@@ -18,21 +20,13 @@ impl UdpConnection {
         info!("UdpConnection new");
         let socket = try!(Self::try_bind_free());
         try!(socket.connect(addr).chain_err(|| "unable to connect to udp socket"));
+
         let thread_builder = thread::Builder::new();
         let socket_clone = try!(socket.try_clone().chain_err(|| "unable to clone udp socket"));
         let (tx, rx) = channel();
-
-        let spawn_result = thread_builder.name("udp_connection".into()).spawn(move || {
-            // TODO: thread needs a timeout and self-kill sentinel
-            info!("UdpConnection thread init");
-            let mut recv_buf = [0u8; 64 * 1000];
-            loop {
-                let size = try!(socket_clone.recv(&mut recv_buf));
-                let vec = recv_buf[..size].to_vec();
-                debug!("UdpConnection data received: {:?}", vec);
-                tx.send(vec).unwrap();
-            }
-        });
+        let spawn_result = thread_builder
+            .name("udp_connection_recv".into())
+            .spawn(|| Self::recv_thread_main(socket_clone, tx));
         let handle = try!(spawn_result.chain_err(|| "unable to spawn thread"));
 
         Ok(UdpConnection {
@@ -42,8 +36,20 @@ impl UdpConnection {
         })
     }
 
+    fn recv_thread_main(socket: UdpSocket, tx: Sender<Vec<u8>>) -> io::Result<()> {
+        // TODO: thread needs a timeout and self-kill sentinel
+        info!("UdpConnection thread init");
+        let mut recv_buf = [0u8; 64 * 1000];
+        loop {
+            let size = try!(socket.recv(&mut recv_buf));
+            let vec = recv_buf[..size].to_vec();
+            debug!("UdpConnection data received: {:?}", vec);
+            tx.send(vec).unwrap();
+        }
+    }
+
     fn try_bind_free() -> Result<UdpSocket> {
-        let mut port = 10000;
+        let mut port = START_BIND_PORT;
         let mut counter = 0;
         let local_addr = try!("127.0.0.1".parse().chain_err(|| "unable to parse local addr"));
 
