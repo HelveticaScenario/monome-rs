@@ -1,0 +1,14 @@
+[package]
+name = "libmonome"
+version = "0.1.0"
+authors = ["Michael Kedzierski <michael@kedzierski.id.au>"]
+
+[dependencies]
+rosc = "0.1"
+env_logger = "0.3"
+clippy = "*"
+log = "0.3"
+ndarray = "0.6"
+
+[dev-dependencies]
+env_logger = "0.3"
