@@ -2,6 +2,7 @@
 name = "monome"
 version = "0.1.0"
 authors = ["Michael Kedzierski <michael@kedzierski.id.au>"]
+license = "MIT/Apache-2.0"
 
 [dependencies]
 rosc = "0.1"
