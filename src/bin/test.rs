@@ -10,10 +10,10 @@ use std::time::Duration;
 extern crate log;
 extern crate env_logger;
 extern crate rosc;
-extern crate libmonome;
+extern crate monome;
 extern crate ndarray;
 
-use libmonome::{Monome, MonomeEvent, MonomeAction};
+use monome::{Monome, MonomeEvent, MonomeAction};
 use ndarray::{Array, ArrayBase, Ix};
 
 

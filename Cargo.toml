@@ -1,5 +1,5 @@
 [package]
-name = "libmonome"
+name = "monome"
 version = "0.1.0"
 authors = ["Michael Kedzierski <michael@kedzierski.id.au>"]
 
